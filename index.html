@@ -32,6 +32,7 @@
   --nav-h:72px;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{min-height:100%;margin:0}
 body{background:var(--room);color:var(--ink);font:15.5px/1.5 var(--f-ui);-webkit-tap-highlight-color:transparent;padding-top:env(safe-area-inset-top,0px)}
 /* safelight glow + grain */
@@ -181,6 +182,26 @@ nav.tabs button[aria-current="page"] svg{color:var(--safe)}
 .tour .art{height:150px;display:grid;place-items:center;background:#120C0C;border-radius:14px;position:relative;overflow:hidden}
 .tour .art svg{height:130px;width:auto}
 .tdots{display:flex;gap:6px;justify-content:center}.tdots i{width:8px;height:8px;border-radius:50%;background:var(--line)}.tdots i.on{background:var(--safe);width:22px;border-radius:4px}
+
+.cam .outl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.cam .splitimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;clip-path:inset(0 0 0 50%)}
+.cam .splitline{position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:var(--paper);box-shadow:0 0 10px rgba(0,0,0,.7);pointer-events:none}
+.cam .splittag{position:absolute;bottom:10px;font:600 11px var(--f-mono);background:rgba(14,9,9,.75);padding:3px 8px;border-radius:6px;pointer-events:none}
+.amode{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--bench);border:1px solid var(--line);border-radius:12px;padding:3px}
+.amode button{border:0;background:none;border-radius:9px;padding:8px 0;font:600 12px var(--f-mono);color:var(--muted);letter-spacing:.04em}
+.amode button[aria-pressed="true"]{background:var(--safe);color:#fff}
+.adj{position:fixed;inset:0;z-index:42;background:#000;display:flex;flex-direction:column}
+.adj .stage{flex:1;display:grid;place-items:center;overflow:hidden;touch-action:none}
+.adj .frame{position:relative;height:100%;max-height:calc(100vh - 230px);aspect-ratio:3/4;max-width:100vw;overflow:hidden;background:#0B0707}
+.adj .frame canvas{position:absolute;inset:0;width:100%;height:100%}
+.adj .frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.adj .abar{padding:12px 16px calc(16px + env(safe-area-inset-bottom,0px));background:var(--room);display:flex;flex-direction:column;gap:10px}
+.adj .pill{background:rgba(14,9,9,.72);border:1px solid var(--line);border-radius:999px;padding:7px 12px;font:600 12px var(--f-mono);letter-spacing:.06em;color:var(--ink)}
+
+.cam .smart{position:absolute;left:50%;top:calc(58px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:3;background:rgba(14,9,9,.82);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font:700 14px var(--f-ui);white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+.cam .smart.ok{background:var(--ok);color:#06210F;border-color:var(--ok)}
+.cam .box.match .outl{filter:hue-rotate(115deg) saturate(1.6) brightness(1.2)}
+.cam .box.match svg.guide path,.cam .box.match svg.guide ellipse,.cam .box.match svg.guide line{stroke:var(--ok)}
 </style>
 </head>
 <body>
@@ -215,7 +236,7 @@ const say=t=>{$('#live').textContent=t;};
 
 /* ---------- settings (this device) ---------- */
 const SKEY='morphe.settings.v1';
-let S={track:'face',ghost:35,guide:true,timer:{face:0,body:10},fps:6,stamp:true,fade:true,notes:true,pin:null,lastBackup:0,backupCount:0,hideInstall:0,toured:false};
+let S={smart:false,smartUnlocked:false,autoShoot:false,track:'face',align:'outline',outl:85,ghost:35,guide:true,timer:{face:0,body:10},fps:6,stamp:true,fade:true,notes:true,pin:null,lastBackup:0,backupCount:0,hideInstall:0,toured:false};
 try{const v=JSON.parse(localStorage.getItem(SKEY));if(v)S=Object.assign(S,v,{timer:Object.assign({},S.timer,v.timer||{})});}catch(e){}
 const saveS=()=>{try{localStorage.setItem(SKEY,JSON.stringify(S));}catch(e){}};
 
@@ -245,7 +266,7 @@ function streak(arr){const set=new Set(arr.map(p=>p.date));let n=0;const d=new D
 let tab='today';
 const TRACK={face:{name:'Face',ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="11" rx="6" ry="7.5"/><path d="M9.5 15.5c1.4 1 3.6 1 5 0"/></svg>'},body:{name:'Full body',ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="2.2"/><path d="M8 22l1.5-8L7 9.5 12 8l5 1.5-2.5 4.5L16 22M9.5 14h5"/></svg>'}};
 function head(){
-  return '<header class="top"><div class="mark">Morph<i>ē</i></div><button class="iconbtn" id="gear" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button></header>'+
+  return '<header class="top"><div class="mark" id="logo">Morph<i>ē</i></div><button class="iconbtn" id="gear" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button></header>'+
   '<div class="track" role="group" aria-label="What you are tracking">'+['face','body'].map(k=>'<button data-track="'+k+'" aria-pressed="'+(S.track===k)+'">'+TRACK[k].ic+TRACK[k].name+'</button>').join('')+'</div>'+
   (hasDemo()?'<div class="demo"><span>Showing demo photos so you can try things out.</span><button class="btn small ghost" id="noDemo">Remove demo</button></div>':'');
 }
@@ -286,7 +307,7 @@ function todayView(){
 }
 function tipsCard(){
   const f=S.track==='face';
-  return '<section class="card"><span class="label">For a smooth timelapse</span><p class="note">'+(f?'Same spot, same light, same face. Hold the phone at eye level, look straight at it, and match the dashed oval and yesterday’s ghost. Morning light by a window works well.':'Prop the phone at waist height against something that doesn’t move, use the 10-second timer, and stand on the same floor mark each day. Match the dashed outline and yesterday’s ghost.')+'</p></section>';
+  return '<section class="card"><span class="label">For a smooth timelapse</span><p class="note">'+(f?'Same spot, same light, same face. Hold the phone at eye level, look straight at it, and match yesterday’s red outline. Slightly off? Tap Adjust after you take it. Morning light by a window works well.':'Prop the phone at waist height against something that doesn’t move, use the 10-second timer, and stand on the same floor mark each day. Match yesterday’s red outline, then use Adjust if you’re slightly off.')+'</p></section>';
 }
 function rollView(){
   const L=list();
@@ -395,21 +416,23 @@ async function openCam(){
   const face=S.track==='face';
   cam={facing:'user',timer:S.timer[S.track]||0,stream:null,count:0};
   $('#camHost').innerHTML='<div class="cam" role="dialog" aria-label="Camera"><div class="vf"><div class="box" id="cbox"><video id="cv" playsinline autoplay muted class="mirror"></video>'+
-    (last?'<img class="ghost" id="cghost" src="'+url(last)+'" alt="">':'')+(S.guide?guideSVG(S.track):'')+
+    '<div id="calign"></div>'+(S.guide?guideSVG(S.track):'')+
     '<div class="camerr" id="cerr" hidden></div><div class="cdown" id="cdown"></div></div>'+
-    '<div class="ctop"><button class="pill" id="cClose">Close</button><span class="pill">'+(last?'GHOST · '+short(last.date):'FIRST FRAME')+'</span></div></div>'+
-    '<div class="cbar">'+(last?'<div class="slider"><span>GHOST</span><input type="range" id="cGh" min="0" max="80" value="'+S.ghost+'" aria-label="Ghost strength"><span id="cGhV">'+S.ghost+'%</span></div>':'')+
-    '<div class="ctl"><div class="side"><button class="sbtn" id="cTimer">'+timerLabel()+'</button><button class="sbtn" id="cGuide" aria-pressed="'+S.guide+'">'+(S.guide?'Outline on':'Outline off')+'</button></div>'+
+    '<div class="smart" id="cSmart" hidden></div><div class="ctop"><button class="pill" id="cClose">Close</button><span class="pill">'+(last?'MATCHING '+short(last.date):'FIRST FRAME')+'</span></div></div>'+
+    '<div class="cbar">'+(last?'<div class="amode" role="group" aria-label="How to show your last photo">'+[['outline','Outline'],['split','Split'],['ghost','Ghost'],['off','Off']].map(([k,l])=>'<button data-am="'+k+'" aria-pressed="'+(S.align===k)+'">'+l+'</button>').join('')+'</div>'+
+      '<div class="slider" id="cSl"><span id="cSlL"></span><input type="range" id="cGh" min="10" max="100" aria-label="Strength"><span id="cGhV"></span></div>':'')+
+    '<div class="ctl"><div class="side"><button class="sbtn" id="cTimer">'+timerLabel()+'</button><button class="sbtn" id="cGuide" aria-pressed="'+S.guide+'">'+(S.guide?'Guide on':'Guide off')+'</button></div>'+
     '<button class="shutter" id="cShut" aria-label="Take photo"></button>'+
     '<div class="side r"><button class="sbtn" id="cFlip" aria-label="Switch camera">Flip</button><button class="sbtn" id="cFile">File</button></div></div>'+
     '<p class="note" style="text-align:center">'+(face?'Eyes on the line, face in the oval.':'Head in the circle, feet on the line. Use the timer and step back.')+'</p></div></div>';
-  if($('#cghost'))$('#cghost').style.opacity=S.ghost/100;
+  cam.last=last;if(last)setAlign(S.align);
+  if($('#camHost .amode'))$('#camHost .amode').onclick=e=>{const b=e.target.closest('[data-am]');if(!b)return;S.align=b.dataset.am;saveS();setAlign(S.align);};
   $('#cClose').onclick=closeCam;$('#cShut').onclick=shoot;$('#cFlip').onclick=()=>{cam.facing=cam.facing==='user'?'environment':'user';startStream();};
   $('#cFile').onclick=()=>{closeCam();$('#pickPhoto').click();};
   $('#cTimer').onclick=()=>{const seq=[0,3,10];cam.timer=seq[(seq.indexOf(cam.timer)+1)%3];S.timer[S.track]=cam.timer;saveS();$('#cTimer').textContent=timerLabel();};
-  $('#cGuide').onclick=()=>{S.guide=!S.guide;saveS();const box=$('#cbox'),g=box.querySelector('svg.guide');if(g)g.remove();if(S.guide)box.insertAdjacentHTML('beforeend',guideSVG(S.track));$('#cGuide').textContent=S.guide?'Outline on':'Outline off';};
-  if($('#cGh'))$('#cGh').oninput=e=>{S.ghost=+e.target.value;$('#cGhV').textContent=S.ghost+'%';$('#cghost').style.opacity=S.ghost/100;saveS();};
-  startStream();
+  $('#cGuide').onclick=()=>{S.guide=!S.guide;saveS();const box=$('#cbox'),g=box.querySelector('svg.guide');if(g)g.remove();if(S.guide)box.insertAdjacentHTML('beforeend',guideSVG(S.track));$('#cGuide').textContent=S.guide?'Guide on':'Guide off';};
+  if($('#cGh'))$('#cGh').oninput=e=>{const v=+e.target.value;if(S.align==='ghost')S.ghost=v;else S.outl=v;$('#cGhV').textContent=v+'%';const o=$('#calign img');if(o)o.style.opacity=v/100;saveS();};
+  startStream().then(()=>{if(S.smart)smartStart();});
 }
 const timerLabel=()=>cam.timer?'Timer '+cam.timer+'s':'Timer off';
 async function startStream(){
@@ -420,7 +443,7 @@ async function startStream(){
 }
 function camErr(m){const e=$('#cerr');if(e){e.hidden=false;e.textContent=m;}}
 function stopStream(){if(cam&&cam.stream){cam.stream.getTracks().forEach(t=>t.stop());cam.stream=null;}}
-function closeCam(){stopStream();clearInterval(cam&&cam.cd);$('#camHost').innerHTML='';cam=null;}
+function closeCam(){smartStop();stopStream();clearInterval(cam&&cam.cd);$('#camHost').innerHTML='';cam=null;}
 function shoot(){
   if(!cam||cam.busy)return;const v=$('#cv');if(!cam.stream||!v.videoWidth){toast('Camera isn’t ready yet.');return;}
   if(cam.timer){cam.busy=true;let n=cam.timer;const el=$('#cdown');el.textContent=n;cam.cd=setInterval(()=>{n--;if(n<=0){clearInterval(cam.cd);el.textContent='';cam.busy=false;grab();}else el.textContent=n;},1000);}
@@ -440,18 +463,188 @@ async function fromFile(f){
   catch(e){toast('Couldn’t open that photo.');}
 }
 function review(blob,fromGallery){
-  const u=URL.createObjectURL(blob),today=ymd(new Date());
-  sheet('<span class="label">'+(fromGallery?'Add a photo':'Developing')+'</span><div class="print"><img src="'+u+'" alt="New photo"><div class="cap"><span>'+TRACK[S.track].name.toUpperCase()+'</span><span>'+short(today)+'</span></div></div>'+
+  let u=URL.createObjectURL(blob);const today=ymd(new Date());
+  const prev=list().filter(p=>p.date!==today).pop()||list()[list().length-1];
+  sheet('<span class="label">'+(fromGallery?'Add a photo':'Developing')+'</span><div class="print"><img id="rImg" src="'+u+'" alt="New photo"><div class="cap"><span>'+TRACK[S.track].name.toUpperCase()+'</span><span>'+short(today)+'</span></div></div>'+
+    (S.smart&&prev?'<p class="note" id="rAuto" style="text-align:center">Smart aligning…</p>':'')+
+    (prev?'<button class="btn ghost" id="rAdj">Adjust to match '+short(prev.date)+'</button>':'')+
     '<div class="field"><label class="note" for="rNote">Note (optional)</label><input type="text" id="rNote" maxlength="60" placeholder="e.g. 78 kg · started gym · haircut"></div>'+
     '<div class="field"><label class="note" for="rDate">Date for this photo</label><input type="date" id="rDate" value="'+today+'" max="'+today+'"></div>'+
     '<p class="note" id="rWarn"></p><div class="row"><button class="btn ghost" id="rAgain" style="flex:1">'+(fromGallery?'Cancel':'Retake')+'</button><button class="btn" id="rKeep" style="flex:2">Keep</button></div>');
   const warn=()=>{const d=$('#rDate').value;$('#rWarn').textContent=list().some(p=>p.date===d&&!p.demo)?'You already have a photo for '+long(d)+'. Keeping this one replaces it.':'';};$('#rDate').onchange=warn;warn();
   $('#rAgain').onclick=()=>{closeSheet();URL.revokeObjectURL(u);if(!fromGallery)openCam();};
+  if($('#rAuto'))autoAlign(blob).then(r=>{const n=$('#rAuto');if(!n)return;
+    if(!r){n.textContent='Smart align couldn’t find you in this one. Use Adjust if needed.';return;}
+    if(r.same){n.textContent='Already lined up ✓';return;}
+    blob=r.blob;URL.revokeObjectURL(u);u=URL.createObjectURL(blob);$('#rImg').src=u;n.textContent='Auto-aligned to day one ✓';});
+  if($('#rAdj'))$('#rAdj').onclick=()=>adjust(blob,prev,nb=>{blob=nb;URL.revokeObjectURL(u);u=URL.createObjectURL(nb);$('#rImg').src=u;$('#rAdj').textContent='Adjusted ✓ · adjust again';});
   $('#rKeep').onclick=async()=>{const d=$('#rDate').value||today;
     try{for(const p of list().filter(p=>p.date===d&&!p.demo)){await delPhoto(p.id);urls.delete(p.id);imgCache.delete(p.id);}
       const note=$('#rNote').value.trim().slice(0,60);await putPhoto({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),track:S.track,date:d,blob,createdAt:Date.now(),note});
       await loadPhotos();closeSheet();tab='today';render();const n=list().length;toast(n===1?'Day one, developed.':'Frame '+n+' developed.');}
     catch(e){toast('Couldn’t save. Your phone may be out of space.');}};
+}
+
+/* ---------- alignment overlays: outline (edges of last photo), split, ghost ---------- */
+const outlineCache=new Map();
+async function outlineURL(p){
+  if(outlineCache.has(p.id))return outlineCache.get(p.id);
+  const im=await loadImg(p),W=360,H=480,c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d',{willReadFrequently:true});
+  const r=Math.max(W/im.width,H/im.height);g.drawImage(im,(W-im.width*r)/2,(H-im.height*r)/2,im.width*r,im.height*r);
+  const d=g.getImageData(0,0,W,H).data,gray=new Float32Array(W*H);
+  for(let i=0;i<W*H;i++)gray[i]=d[i*4]*.299+d[i*4+1]*.587+d[i*4+2]*.114;
+  // blur twice so skin texture and fabric don't turn into noise; only the main shapes stay
+  const box=(src)=>{const o=new Float32Array(W*H);for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){let t=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)t+=src[(y+dy)*W+x+dx];o[y*W+x]=t/9;}return o;};
+  const bl=box(box(gray));
+  const mag=new Float32Array(W*H),vals=[];
+  for(let y=2;y<H-2;y++)for(let x=2;x<W-2;x++){const i=y*W+x;
+    const gx=-bl[i-W-1]-2*bl[i-1]-bl[i+W-1]+bl[i-W+1]+2*bl[i+1]+bl[i+W+1];
+    const gy=-bl[i-W-1]-2*bl[i-W]-bl[i-W+1]+bl[i+W-1]+2*bl[i+W]+bl[i+W+1];
+    const m=Math.hypot(gx,gy);mag[i]=m;if((x+y)%7===0)vals.push(m);}
+  vals.sort((a,b)=>a-b);const th=Math.max(14,vals[Math.floor(vals.length*0.935)]);
+  const out=g.createImageData(W,H),o=out.data;
+  for(let i=0;i<W*H;i++){if(mag[i]>th){o[i*4]=255;o[i*4+1]=70;o[i*4+2]=90;o[i*4+3]=Math.min(255,(mag[i]-th)/th*255+120);}}
+  g.clearRect(0,0,W,H);g.putImageData(out,0,0);
+  const u=c.toDataURL('image/png');outlineCache.set(p.id,u);return u;
+}
+async function setAlign(mode){
+  const host=$('#calign'),last=cam&&cam.last;if(!host||!last)return;
+  $$('#camHost .amode button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===mode)));
+  $('#cSl').hidden=!(mode==='ghost'||mode==='outline');
+  const v=mode==='ghost'?S.ghost:S.outl;$('#cGh').value=v;$('#cGhV').textContent=v+'%';$('#cSlL').textContent=mode==='ghost'?'GHOST':'LINES';
+  if(mode==='off'){host.innerHTML='';return;}
+  if(mode==='ghost'){host.innerHTML='<img class="ghost" src="'+url(last)+'" alt="" style="opacity:'+(S.ghost/100)+'">';return;}
+  if(mode==='split'){host.innerHTML='<img class="splitimg" src="'+url(last)+'" alt=""><div class="splitline"></div><span class="splittag" style="left:10px">NOW</span><span class="splittag" style="right:10px">'+short(last.date)+'</span>';return;}
+  host.innerHTML='';
+  try{const u=await outlineURL(last);if(S.align==='outline'&&$('#calign'))$('#calign').innerHTML='<img class="outl" src="'+u+'" alt="" style="opacity:'+(S.outl/100)+'">';}catch(e){}
+}
+
+/* ---------- adjust after capture: drag, pinch and tilt to match the last photo ---------- */
+function adjust(blob,prev,done){
+  const el=document.createElement('div');el.className='adj';el.setAttribute('role','dialog');el.setAttribute('aria-label','Line up your photo');
+  el.innerHTML='<div style="position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:12px;right:12px;display:flex;justify-content:space-between;z-index:3"><button class="pill" id="aCancel">Cancel</button><span class="pill">DRAG · PINCH · TILT</span></div>'+
+   '<div class="stage" id="aStage"><div class="frame" id="aFrame"><canvas id="aCv" width="540" height="720"></canvas><img id="aOv" alt=""></div></div>'+
+   '<div class="abar"><div class="slider"><span>SIZE</span><input type="range" id="aZ" min="80" max="130" value="100" aria-label="Size"><span id="aZV">100%</span></div>'+
+   '<div class="slider"><span>TILT</span><input type="range" id="aR" min="-12" max="12" step="0.5" value="0" aria-label="Tilt"><span id="aRV">0°</span></div>'+
+   '<div class="row"><button class="btn ghost" id="aReset" style="flex:1">Reset</button><button class="btn" id="aDone" style="flex:2">Looks lined up</button></div></div>';
+  document.body.appendChild(el);
+  const T={x:0,y:0,s:1,r:0};let img=null,soft=null;const cv=$('#aCv'),g=cv.getContext('2d');
+  const draw=(ctx,W,H)=>{ctx.fillStyle='#0B0707';ctx.fillRect(0,0,W,H);
+    const base=Math.max(W/img.width,H/img.height);
+    // soft blurred copy behind, so moved photos don't leave black edges
+    if(!soft){soft=document.createElement('canvas');soft.width=36;soft.height=48;const sg=soft.getContext('2d');const sb=Math.max(36/img.width,48/img.height)*1.2;sg.drawImage(img,(36-img.width*sb)/2,(48-img.height*sb)/2,img.width*sb,img.height*sb);sg.fillStyle='rgba(0,0,0,.3)';sg.fillRect(0,0,36,48);}
+    ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(soft,0,0,W,H);ctx.restore();
+    ctx.save();ctx.translate(W/2+T.x*W,H/2+T.y*H);ctx.rotate(T.r*Math.PI/180);ctx.scale(T.s,T.s);ctx.drawImage(img,-img.width*base/2,-img.height*base/2,img.width*base,img.height*base);ctx.restore();};
+  const redraw=()=>{if(img)draw(g,540,720);$('#aZ').value=Math.round(T.s*100);$('#aZV').textContent=Math.round(T.s*100)+'%';$('#aR').value=T.r;$('#aRV').textContent=T.r+'°';};
+  createImageBitmap(blob).then(b=>{img=b;redraw();});
+  if(prev)outlineURL(prev).then(u=>{$('#aOv').src=u;$('#aOv').style.opacity=.9;}).catch(()=>{});
+  const pts=new Map();let start=null;const stage=$('#aStage'),frame=$('#aFrame');
+  const snap=()=>{const a=[...pts.values()],r=frame.getBoundingClientRect();
+    if(a.length===1)return {x:a[0].x,y:a[0].y,W:r.width,H:r.height};return {x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2,d:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),W:r.width,H:r.height};};
+  stage.addEventListener('pointerdown',e=>{stage.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});start={p:snap(),t:Object.assign({},T)};});
+  stage.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId)||!start)return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});const n=snap();
+    T.x=Math.max(-.3,Math.min(.3,start.t.x+(n.x-start.p.x)/n.W));T.y=Math.max(-.3,Math.min(.3,start.t.y+(n.y-start.p.y)/n.H));
+    if(n.d&&start.p.d)T.s=Math.max(.8,Math.min(1.3,start.t.s*n.d/start.p.d));redraw();});
+  const up=e=>{pts.delete(e.pointerId);start=pts.size?{p:snap(),t:Object.assign({},T)}:null;};
+  stage.addEventListener('pointerup',up);stage.addEventListener('pointercancel',up);
+  $('#aZ').oninput=e=>{T.s=+e.target.value/100;redraw();};$('#aR').oninput=e=>{T.r=+e.target.value;redraw();};
+  $('#aReset').onclick=()=>{T.x=0;T.y=0;T.s=1;T.r=0;redraw();};
+  $('#aCancel').onclick=()=>el.remove();
+  $('#aDone').onclick=()=>{if(!img)return;const c=document.createElement('canvas');c.width=1080;c.height=1440;draw(c.getContext('2d'),1080,1440);c.toBlob(b=>{el.remove();done(b);},'image/jpeg',0.86);};
+}
+
+/* ---------- smart align (hidden beta): on-device MediaPipe, nothing leaves the phone ---------- */
+const MP='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODELS={face:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+  body:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'};
+const AI={face:null,body:null,loading:{},ts:0};
+async function aiGet(track){
+  if(window.MORPHE_TEST_DETECTOR)return window.MORPHE_TEST_DETECTOR;
+  if(AI[track])return AI[track];
+  if(!AI.loading[track])AI.loading[track]=(async()=>{
+    const v=await import(MP+'/vision_bundle.mjs');const fs=await v.FilesetResolver.forVisionTasks(MP+'/wasm');
+    const opt=d=>({baseOptions:{modelAssetPath:MODELS[track],delegate:d},runningMode:'VIDEO'});
+    const make=async d=>track==='face'?v.FaceLandmarker.createFromOptions(fs,Object.assign(opt(d),{numFaces:1})):v.PoseLandmarker.createFromOptions(fs,Object.assign(opt(d),{numPoses:1}));
+    let m;try{m=await make('GPU');}catch(e){m=await make('CPU');}
+    AI[track]=m;return m;})().catch(e=>{AI.loading[track]=null;throw e;});
+  return AI.loading[track];
+}
+/* two key points per track: face = eye centres, body = mid-shoulder and mid-hip. Normalised to the source frame. */
+function keyPts(track,res){
+  if(track==='face'){const f=res&&res.faceLandmarks&&res.faceLandmarks[0];if(!f)return null;
+    const avg=(i,j)=>[(f[i].x+f[j].x)/2,(f[i].y+f[j].y)/2];const e1=avg(33,133),e2=avg(362,263);return e1[0]<e2[0]?[e1,e2]:[e2,e1];}
+  const p=res&&res.landmarks&&res.landmarks[0];if(!p)return null;
+  const mid=(i,j)=>[(p[i].x+p[j].x)/2,(p[i].y+p[j].y)/2];return [mid(11,12),mid(23,24)];
+}
+async function detect(track,src){const m=await aiGet(track);AI.ts=Math.max(AI.ts+1,performance.now());return keyPts(track,m.detectForVideo(src,AI.ts));}
+/* landmarks of a stored photo, cached on the photo record (coords in the saved 3:4 frame) */
+async function photoPts(p){
+  if(p.lm&&p.lm.track===p.track)return p.lm.pts;
+  try{const im=await loadImg(p);const pts=await detect(p.track,im);p.lm={track:p.track,pts};try{await putPhoto(p);}catch(e){}return pts;}catch(e){return null;}
+}
+/* the anchor everything is aligned to: the first photo on this roll that has landmarks */
+async function anchorPts(){for(const p of list()){if(p.demo)continue;const pts=await photoPts(p);if(pts)return pts;}return null;}
+/* video coords -> displayed/saved 3:4 frame coords (cover crop, mirrored for the front camera) */
+function toFrame(pt,vw,vh,mirror){const W=3,H=4,r=Math.max(W/vw,H/vh);let x=(pt[0]*vw*r-(vw*r-W)/2)/W,y=(pt[1]*vh*r-(vh*r-H)/2)/H;if(mirror)x=1-x;return [x,y];}
+function compare(now,ref){
+  // work in pixel-ish units of a 3:4 frame
+  const P=q=>[q[0]*3,q[1]*4];const a=P(now[0]),b=P(now[1]),A=P(ref[0]),B=P(ref[1]);
+  const d=Math.hypot(b[0]-a[0],b[1]-a[1]),D=Math.hypot(B[0]-A[0],B[1]-A[1]);
+  const ang=Math.atan2(b[1]-a[1],b[0]-a[0]),ANG=Math.atan2(B[1]-A[1],B[0]-A[0]);
+  let dθ=(ang-ANG)*180/Math.PI;while(dθ>180)dθ-=360;while(dθ<-180)dθ+=360;
+  return {scale:d/D,dx:((a[0]+b[0])-(A[0]+B[0]))/2/3,dy:((a[1]+b[1])-(A[1]+B[1]))/2/4,rot:dθ};
+}
+function guidance(c,track){
+  const tips=[];const sTol=.06,pTol=.035,rTol=4;
+  if(c.scale<1-sTol)tips.push(track==='face'?'Come closer':'Step closer');else if(c.scale>1+sTol)tips.push(track==='face'?'Move back':'Step back');
+  if(c.dx>pTol)tips.push('Move ←');else if(c.dx<-pTol)tips.push('Move →');
+  if(c.dy>pTol)tips.push('Move ↑');else if(c.dy<-pTol)tips.push('Move ↓');
+  if(track==='face'&&Math.abs(c.rot)>rTol)tips.push(c.rot>0?'Tilt ↺':'Tilt ↻');
+  return tips;
+}
+/* live loop while the camera is open */
+async function smartStart(){
+  if(!S.smart||!cam)return;const el=$('#cSmart');if(!el)return;
+  el.hidden=false;el.textContent='Loading smart align…';
+  let ref;try{await aiGet(S.track);ref=await anchorPts();}catch(e){el.textContent='Smart align couldn’t load. Check your internet once.';return;}
+  if(!ref){el.textContent='Smart align starts after your first photo.';return;}
+  cam.ref=ref;let good=0,busy=false;
+  cam.smartT=setInterval(async()=>{
+    const v=$('#cv');if(!cam||!v||!v.videoWidth||busy||cam.busy)return;busy=true;
+    try{const raw=await detect(S.track,v);const box=$('#cbox');
+      if(!raw){el.textContent=S.track==='face'?'Can’t see your face':'Can’t see your body yet';el.className='smart';box&&box.classList.remove('match');good=0;}
+      else{let now=raw.map(q=>toFrame(q,v.videoWidth,v.videoHeight,cam.facing==='user'));if(S.track==='face'&&now[0][0]>now[1][0])now=[now[1],now[0]];const tips=guidance(compare(now,ref),S.track);
+        if(tips.length){el.textContent=tips.join(' · ');el.className='smart';box&&box.classList.remove('match');good=0;}
+        else{good++;el.className='smart ok';box&&box.classList.add('match');
+          if(S.autoShoot){const left=Math.max(0,4-good);el.textContent=left?'Perfect ✓ hold still…':'Perfect ✓';if(good>=4&&!cam.busy){good=-8;shoot();}}
+          else el.textContent='Perfect ✓ take it';}}
+    }catch(e){}busy=false;},160);
+}
+function smartStop(){if(cam&&cam.smartT){clearInterval(cam.smartT);cam.smartT=null;}}
+/* after capture: move, scale and rotate the photo so its key points land on the anchor's */
+function renderT(img,T,W,H){
+  const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');
+  const base=Math.max(W/img.width,H/img.height);
+  const soft=document.createElement('canvas');soft.width=36;soft.height=48;const sg=soft.getContext('2d');const sb=Math.max(36/img.width,48/img.height)*1.2;
+  sg.drawImage(img,(36-img.width*sb)/2,(48-img.height*sb)/2,img.width*sb,img.height*sb);sg.fillStyle='rgba(0,0,0,.3)';sg.fillRect(0,0,36,48);
+  ctx.imageSmoothingQuality='high';ctx.drawImage(soft,0,0,W,H);
+  ctx.save();ctx.translate(W/2+T.x*W,H/2+T.y*H);ctx.rotate(T.r*Math.PI/180);ctx.scale(T.s,T.s);ctx.drawImage(img,-img.width*base/2,-img.height*base/2,img.width*base,img.height*base);ctx.restore();
+  return c;
+}
+async function autoAlign(blob){
+  if(!S.smart)return null;
+  try{const ref=await anchorPts();if(!ref)return null;const img=await createImageBitmap(blob);const now=await detect(S.track,img);if(!now)return null;
+    const W=1080,H=1440,P=q=>[q[0]*W,q[1]*H];const a=P(now[0]),b=P(now[1]),A=P(ref[0]),B=P(ref[1]);
+    let s=Math.hypot(B[0]-A[0],B[1]-A[1])/Math.hypot(b[0]-a[0],b[1]-a[1]);
+    let r=Math.atan2(B[1]-A[1],B[0]-A[0])-Math.atan2(b[1]-a[1],b[0]-a[0]);
+    if(S.track==='body')r=0;                 // bodies: don't rotate, just move and scale
+    s=Math.max(.8,Math.min(1.3,s));r=Math.max(-12,Math.min(12,r*180/Math.PI));
+    const m=[(a[0]+b[0])/2-W/2,(a[1]+b[1])/2-H/2],M=[(A[0]+B[0])/2,(A[1]+B[1])/2];const rr=r*Math.PI/180;
+    const tx=M[0]-W/2-s*(Math.cos(rr)*m[0]-Math.sin(rr)*m[1]),ty=M[1]-H/2-s*(Math.sin(rr)*m[0]+Math.cos(rr)*m[1]);
+    const T={x:Math.max(-.3,Math.min(.3,tx/W)),y:Math.max(-.3,Math.min(.3,ty/H)),s,r:Math.round(r*2)/2};
+    if(Math.abs(T.x)<.004&&Math.abs(T.y)<.004&&Math.abs(s-1)<.01&&Math.abs(T.r)<.5)return {blob,T,same:true};
+    const c=renderT(img,T,W,H);const nb=await new Promise(res=>c.toBlob(res,'image/jpeg',0.86));return {blob:nb,T};
+  }catch(e){return null;}
 }
 
 /* ---------- photo sheet ---------- */
@@ -478,9 +671,15 @@ function openSettings(){
   sheet('<div class="row" style="justify-content:space-between"><div class="h1">Settings</div><button class="btn small ghost" id="sClose">Close</button></div>'+
    '<section class="card"><span class="label">Privacy</span><div class="tog"><div>PIN lock<small>Asks for a 4-digit PIN when Morphē opens</small></div><label class="switch"><input type="checkbox" id="sPin"'+(S.pin?' checked':'')+' aria-label="PIN lock"><span></span></label></div>'+
    '<p class="note">Photos are stored only on this phone, in this browser. They are never uploaded. The PIN stops someone casually opening the app; it does not encrypt the photos.</p></section>'+
+   (S.smartUnlocked?'<section class="card"><span class="label">Smart align · beta</span>'+
+     '<div class="tog"><div>Smart align<small>On-phone AI finds your eyes (face) or shoulders and hips (body), coaches you live and straightens each photo to match day one</small></div><label class="switch"><input type="checkbox" id="sSmart"'+(S.smart?' checked':'')+' aria-label="Smart align"><span></span></label></div>'+
+     '<div class="tog"><div>Auto-capture<small>Takes the photo by itself when you’re lined up and still</small></div><label class="switch"><input type="checkbox" id="sAuto"'+(S.autoShoot?' checked':'')+' aria-label="Auto-capture"><span></span></label></div>'+
+     '<p class="note" id="sSmartN">The AI downloads once (about 5–10 MB), then works offline. Photos are analysed on your phone and never sent anywhere.</p></section>':'')+
    '<section class="card"><span class="label">Backup · '+n+' photos</span><p class="note">Save every photo in one .zip file. Restore it on a new phone, or if you clear your browser. Keep the file somewhere private.</p><div class="row"><button class="btn amber" id="bSave" style="flex:1">Save backup</button><button class="btn ghost" id="bLoad" style="flex:1">Restore</button></div><div class="devbar" id="bBar" hidden><i></i></div></section>'+
    '<section class="card"><span class="label">Start over</span><button class="btn ghost" id="sWipe">Delete all photos</button><div id="sWipeC"></div></section>');
   $('#sClose').onclick=closeSheet;
+  if($('#sSmart'))$('#sSmart').onchange=async e=>{S.smart=e.target.checked;saveS();if(S.smart){$('#sSmartN').textContent='Downloading the AI for '+TRACK[S.track].name+'…';try{await aiGet(S.track);$('#sSmartN').textContent='Ready ✓ It also downloads for the other mode the first time you use it.';}catch(err){$('#sSmartN').textContent='Couldn’t download it. Check your internet and try again.';S.smart=false;e.target.checked=false;saveS();}}};
+  if($('#sAuto'))$('#sAuto').onchange=e=>{S.autoShoot=e.target.checked;saveS();};
   $('#sPin').onchange=e=>{if(e.target.checked){e.target.checked=false;pinPad('set');}else{S.pin=null;saveS();toast('PIN lock off');}};
   $('#bSave').onclick=backupSave;$('#bLoad').onclick=()=>$('#pickBackup').click();
   $('#sWipe').onclick=()=>{$('#sWipeC').innerHTML='<div class="row" style="margin-top:8px"><span class="note" style="flex:1">Delete all '+n+' photos from this phone? Save a backup first if you want them.</span><button class="btn small" id="sWipeY">Delete all</button></div>';
@@ -555,7 +754,7 @@ async function removeDemo(){for(const p of list().filter(p=>p.demo)){await delPh
 /* ---------- first-run tour ---------- */
 const TOUR=[
  {t:'Pick what you’re tracking',d:'Face for hair, beard or skin. Full body for fitness. Each has its own roll and its own timelapse.',art:'<svg viewBox="0 0 200 130"><rect x="20" y="20" width="70" height="92" rx="4" fill="#F3ECE1"/><rect x="26" y="26" width="58" height="70" fill="#2A1E1E"/><ellipse cx="55" cy="58" rx="16" ry="21" fill="none" stroke="#E0283F" stroke-width="2" stroke-dasharray="4 3"/><rect x="110" y="20" width="70" height="92" rx="4" fill="#F3ECE1"/><rect x="116" y="26" width="58" height="70" fill="#2A1E1E"/><circle cx="145" cy="38" r="6" fill="none" stroke="#E0283F" stroke-width="2" stroke-dasharray="3 3"/><path d="M135 48h20l-3 22h-14zM138 70l-2 22M152 70l2 22" fill="none" stroke="#E0283F" stroke-width="2" stroke-dasharray="3 3"/></svg>'},
- {t:'Line up with the ghost',d:'Yesterday’s photo shows faintly over the camera, with a dashed outline. Match them and your timelapse comes out smooth instead of jumpy.',art:'<svg viewBox="0 0 200 130"><rect x="60" y="8" width="80" height="114" rx="6" fill="#0B0707" stroke="#3A2525"/><ellipse cx="100" cy="58" rx="24" ry="31" fill="#6B4430" opacity=".35"/><ellipse cx="104" cy="60" rx="24" ry="31" fill="#6B4430"/><ellipse cx="100" cy="58" rx="27" ry="34" fill="none" stroke="#E0283F" stroke-width="2" stroke-dasharray="5 4"/><circle cx="100" cy="112" r="7" fill="#E0283F"/></svg>'},
+ {t:'Line up with yesterday',d:'The camera shows yesterday’s photo as a red outline (or a split screen, or a faint ghost). Match it, and if you’re a bit off, tap Adjust afterwards to drag it into place.',art:'<svg viewBox="0 0 200 130"><rect x="60" y="8" width="80" height="114" rx="6" fill="#0B0707" stroke="#3A2525"/><ellipse cx="100" cy="58" rx="24" ry="31" fill="#6B4430" opacity=".35"/><ellipse cx="104" cy="60" rx="24" ry="31" fill="#6B4430"/><ellipse cx="100" cy="58" rx="27" ry="34" fill="none" stroke="#E0283F" stroke-width="2" stroke-dasharray="5 4"/><circle cx="100" cy="112" r="7" fill="#E0283F"/></svg>'},
  {t:'Come back daily, then Develop',d:'One photo a day, same spot, same light. Add a note if you like (“78 kg”, “haircut”). After a few weeks, Develop turns the roll into a video.',art:'<svg viewBox="0 0 200 130"><rect x="10" y="30" width="180" height="70" rx="6" fill="#120C0C"/><g fill="#3A2A26"><rect x="16" y="34" width="8" height="5"/><rect x="36" y="34" width="8" height="5"/><rect x="56" y="34" width="8" height="5"/><rect x="76" y="34" width="8" height="5"/><rect x="96" y="34" width="8" height="5"/><rect x="116" y="34" width="8" height="5"/><rect x="136" y="34" width="8" height="5"/><rect x="156" y="34" width="8" height="5"/><rect x="176" y="34" width="8" height="5"/><rect x="16" y="91" width="8" height="5"/><rect x="36" y="91" width="8" height="5"/><rect x="56" y="91" width="8" height="5"/><rect x="76" y="91" width="8" height="5"/><rect x="96" y="91" width="8" height="5"/><rect x="116" y="91" width="8" height="5"/><rect x="136" y="91" width="8" height="5"/><rect x="156" y="91" width="8" height="5"/><rect x="176" y="91" width="8" height="5"/></g><g fill="#6B4430"><rect x="20" y="44" width="30" height="42" opacity=".5"/><rect x="56" y="44" width="30" height="42" opacity=".65"/><rect x="92" y="44" width="30" height="42" opacity=".8"/><rect x="128" y="44" width="30" height="42"/></g><circle cx="176" cy="65" r="14" fill="#F2A541"/><path d="M172 58v14l11-7z" fill="#2A1700"/></svg>'}
 ];
 function tourShow(i){
@@ -569,6 +768,7 @@ function tourShow(i){
 }
 async function persist(){try{if(navigator.storage&&navigator.storage.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist();}catch(e){}}
 
+let logoTaps=0,logoT=0;
 /* ---------- events ---------- */
 $('nav.tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;tab=b.dataset.tab;stopPlayer();render();window.scrollTo(0,0);});
 $('#app').addEventListener('click',e=>{
@@ -576,6 +776,7 @@ $('#app').addEventListener('click',e=>{
   const tg=e.target.closest('[data-tabgo]');if(tg){tab=tg.dataset.tabgo;stopPlayer();render();window.scrollTo(0,0);return;}
   const ph=e.target.closest('[data-photo]');if(ph){openPhoto(ph.dataset.photo);return;}
   const id=e.target.id;
+  if(e.target.closest('#logo')){const n=Date.now();logoTaps=(n-logoT<1500?logoTaps:0)+1;logoT=n;if(logoTaps>=5){logoTaps=0;S.smartUnlocked=!S.smartUnlocked;if(!S.smartUnlocked)S.smart=false;saveS();toast(S.smartUnlocked?'Smart align unlocked. Find it in Settings.':'Smart align hidden.');}return;}
   if(id==='shoot'){openCam();return;}
   if(id==='import'){$('#pickPhoto').click();return;}
   if(id==='gear'||e.target.closest('#gear')){openSettings();return;}

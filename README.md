@@ -2,7 +2,7 @@
 
 **One photo a day. Watch yourself change.**
 
-Morphē (Greek *μορφή*, "form, shape", the root of *metamorphosis*) is a free progress-photo app. Take a photo every day lined up with yesterday's ghost, and after a few weeks develop the whole roll into a timelapse video.
+Morphē (Greek *μορφή*, "form, shape", the root of *metamorphosis*) is a free progress-photo app. Take a photo every day lined up with yesterday's outline, and after a few weeks develop the whole roll into a timelapse video.
 
 **Open the app:** https://ianyarko.github.io/morphe/
 
@@ -13,7 +13,8 @@ Morphē (Greek *μορφή*, "form, shape", the root of *metamorphosis*) is a fr
 | | |
 |---|---|
 | **Face and Full body** | Two separate rolls: face for hair, beard or skin; full body for fitness |
-| **Ghost overlay** | Yesterday's photo shows faintly over the camera so every photo lines up |
+| **Line-up modes** | Show yesterday's photo as a red **Outline**, a **Split** screen (half now, half yesterday), a faint **Ghost**, or **Off** |
+| **Adjust** | After taking a photo, drag, pinch and tilt it to match yesterday's outline, so slightly-off days still give a smooth video |
 | **Dashed outline** | An oval for faces, a full figure with a floor line for bodies |
 | **Timer** | 3 or 10 seconds, so you can prop the phone up and step back |
 | **Notes** | Add a note to any day, like "78 kg" or "started gym" |
@@ -29,7 +30,7 @@ Morphē (Greek *μορφή*, "form, shape", the root of *metamorphosis*) is a fr
    - iPhone: in **Safari**, tap **Share → Add to Home Screen**
    - Android: in **Chrome**, tap **⋮ → Install app**
 2. Open Morphē from the new icon and allow the camera.
-3. Pick **Face** or **Full body**, line up with the dashed outline, and take your first photo.
+3. Pick **Face** or **Full body**, line up with the dashed guide, and take your first photo. From day two, match yesterday's red outline (or try **Split**), and use **Adjust** if you're slightly off.
 4. Come back every day. Same spot, same light, same pose.
 5. After a few weeks, open **Develop** and make your video.
 
@@ -45,7 +46,7 @@ Morphē (Greek *μορφή*, "form, shape", the root of *metamorphosis*) is a fr
 ## Releasing an update
 
 1. Upload the new `index.html`.
-2. In `sw.js`, bump the version line (e.g. `morphe-v1` → `morphe-v2`) and upload it too.
+2. In `sw.js`, bump the version line (e.g. `morphe-v2` → `morphe-v3`) and upload it too.
 
 ---
 
