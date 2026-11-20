@@ -15,8 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="Morphē">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=Manrope:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
 /* Darkroom: warm black room, red safelight glow, amber timer light, prints on off-white paper with film-strip edges. Deliberately single dark theme. */
 :root{
@@ -202,6 +201,17 @@ nav.tabs button[aria-current="page"] svg{color:var(--safe)}
 .cam .smart.ok{background:var(--ok);color:#06210F;border-color:var(--ok)}
 .cam .box.match .outl{filter:hue-rotate(115deg) saturate(1.6) brightness(1.2)}
 .cam .box.match svg.guide path,.cam .box.match svg.guide ellipse,.cam .box.match svg.guide line{stroke:var(--ok)}
+/* v4 */
+.cam .lightp{position:absolute;left:50%;bottom:calc(14px);transform:translateX(-50%);z-index:3;background:rgba(14,9,9,.85);border:1px solid var(--amber);color:var(--amber);border-radius:999px;padding:8px 14px;font:600 13px var(--f-body,system-ui);white-space:normal;text-align:center;max-width:88%}
+.grid button i.rf{position:absolute;top:3px;left:4px;font-style:normal;font-size:12px;background:var(--amber);color:#2A1700;border-radius:6px;padding:0 4px;font-weight:800}
+.mile{border:1px solid var(--amber)}
+.mpair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mpair figure{margin:0;position:relative;border-radius:8px;overflow:hidden;aspect-ratio:3/4;background:var(--tray)}
+.mpair img{width:100%;height:100%;object-fit:cover;display:block}
+.mpair figcaption{position:absolute;left:6px;bottom:5px;font:600 11px var(--f-mono);color:#fff;text-shadow:0 1px 3px #000}
+.print canvas.tall{aspect-ratio:9/16}
+.linkish{border:0;background:none;color:var(--dim);font:600 13px inherit;align-self:center;text-decoration:underline;padding:4px}
+input[type=time]{width:100%}
 </style>
 </head>
 <body>
@@ -236,8 +246,8 @@ const say=t=>{$('#live').textContent=t;};
 
 /* ---------- settings (this device) ---------- */
 const SKEY='morphe.settings.v1';
-let S={smart:false,smartUnlocked:false,autoShoot:false,track:'face',align:'outline',outl:85,ghost:35,guide:true,timer:{face:0,body:10},fps:6,stamp:true,fade:true,notes:true,pin:null,lastBackup:0,backupCount:0,hideInstall:0,toured:false};
-try{const v=JSON.parse(localStorage.getItem(SKEY));if(v)S=Object.assign(S,v,{timer:Object.assign({},S.timer,v.timer||{})});}catch(e){}
+let S={smart:false,smartUnlocked:false,autoShoot:false,track:'face',align:'outline',outl:85,ghost:35,guide:true,timer:{face:0,body:10},fps:6,stamp:true,fade:true,notes:true,pin:null,lastBackup:0,backupCount:0,hideInstall:0,toured:false,ref:{face:null,body:null},msSeen:{face:0,body:0},evenLight:true,vfmt:'34',endTag:true,remind:'07:30'};
+try{const v=JSON.parse(localStorage.getItem(SKEY));if(v)S=Object.assign(S,v,{timer:Object.assign({},S.timer,v.timer||{}),ref:Object.assign({face:null,body:null},v.ref||{}),msSeen:Object.assign({face:0,body:0},v.msSeen||{})});}catch(e){}
 const saveS=()=>{try{localStorage.setItem(SKEY,JSON.stringify(S));}catch(e){}};
 
 /* ---------- photo store: IndexedDB on this phone only ---------- */
@@ -250,16 +260,35 @@ async function putPhoto(p){return tx('readwrite',s=>reqP(s.put(p)));}
 async function delPhoto(id){return tx('readwrite',s=>reqP(s.delete(id)));}
 async function clearAll(){return tx('readwrite',s=>reqP(s.clear()));}
 
-let PH={face:[],body:[]};const urls=new Map();
+let PH={face:[],body:[]};const urls=new Map(),turls=new Map();
+/* small thumbnail + brightness of the middle of the frame, saved with each photo so the roll loads fast */
+async function makeThumb(blob){
+  const bmp=await createImageBitmap(blob),c=document.createElement('canvas');c.width=240;c.height=320;const g=c.getContext('2d',{willReadFrequently:true});
+  const r=Math.max(240/bmp.width,320/bmp.height);g.drawImage(bmp,(240-bmp.width*r)/2,(320-bmp.height*r)/2,bmp.width*r,bmp.height*r);
+  const d=g.getImageData(60,40,120,240).data;let sum=0,n=0;for(let i=0;i<d.length;i+=16){sum+=d[i]*.299+d[i+1]*.587+d[i+2]*.114;n++;}
+  const thumb=await new Promise(res=>c.toBlob(res,'image/jpeg',0.72));return {thumb,lum:Math.round(sum/n)};
+}
+const turl=p=>{if(!p.thumb)return url(p);if(!turls.has(p.id))turls.set(p.id,URL.createObjectURL(p.thumb));return turls.get(p.id);};
+const forget=id=>{urls.delete(id);turls.delete(id);imgCache.delete(id);};
+let filling=false;
+async function backfill(){
+  if(filling)return;filling=true;let did=0;
+  try{for(const p of [...PH.face,...PH.body]){if(p.thumb&&p.lum!=null)continue;try{const t=await makeThumb(p.blob);p.thumb=t.thumb;p.lum=t.lum;await putPhoto(p);did++;}catch(e){}}}
+  finally{filling=false;}
+  if(did&&(tab==='today'||tab==='roll'))render();
+}
 const url=p=>{if(!urls.has(p.id))urls.set(p.id,URL.createObjectURL(p.blob));return urls.get(p.id);};
 async function loadPhotos(){
   let all=[];try{all=await allPhotos();}catch(e){toast('This browser blocked photo storage. Try another browser.');}
   PH={face:[],body:[]};all.forEach(p=>{(PH[p.track]||(PH[p.track]=[])).push(p);});
   PH.face.sort((a,b)=>a.date<b.date?-1:1);PH.body.sort((a,b)=>a.date<b.date?-1:1);
+  setTimeout(backfill,400);
 }
 const list=()=>PH[S.track]||[];
 const real=()=>list().filter(p=>!p.demo);
 const hasDemo=()=>list().some(p=>p.demo);
+const refPhoto=()=>list().find(p=>p.id===S.ref[S.track]&&!p.demo)||null;
+const MILES=[7,14,30,60,100,180,365];
 function streak(arr){const set=new Set(arr.map(p=>p.date));let n=0;const d=new Date();if(!set.has(ymd(d)))d.setDate(d.getDate()-1);for(;;){if(set.has(ymd(d))){n++;d.setDate(d.getDate()-1);}else break;}return n;}
 
 /* ---------- views ---------- */
@@ -287,12 +316,20 @@ function installCard(){
 function backupNudge(){
   const n=[...PH.face,...PH.body].filter(p=>!p.demo).length,since=n-(S.backupCount||0);
   if(n<7)return '';
-  if(S.lastBackup&&since<14)return '';
-  return '<div class="nudge"><p><b class="num">'+(S.lastBackup?since:n)+'</b> photos '+(S.lastBackup?'since your last backup':'and no backup yet')+'. If this phone is lost, they’re gone.</p><button class="btn small amber" id="nudgeBk">Back up</button></div>';
+  const month=S.lastBackup&&since>0&&Date.now()-S.lastBackup>30*864e5;
+  if(S.lastBackup&&since<14&&!month)return '';
+  return '<div class="nudge"><p>'+(month?'It’s been a month since your last backup. <b class="num">'+since+'</b> new photos could be lost with this phone.':'<b class="num">'+(S.lastBackup?since:n)+'</b> photos '+(S.lastBackup?'since your last backup':'and no backup yet')+'. If this phone is lost, they’re gone.')+'</p><button class="btn small amber" id="nudgeBk">Back up</button></div>';
+}
+function milestone(){
+  const R=real(),n=R.length,m=MILES.filter(x=>x<=n).pop();if(!m||m<=(S.msSeen[S.track]||0))return '';
+  const a=R[0],b=R[n-1];
+  return '<section class="card mile"><span class="label">Milestone · '+m+' photos</span><div class="h1">'+m+' days of showing up.</div><p class="lead">Time to see the change. Here’s day one next to today.</p>'+
+    '<div class="mpair"><figure><img src="'+turl(a)+'" alt="'+long(a.date)+'"><figcaption>'+short(a.date)+'</figcaption></figure><figure><img src="'+turl(b)+'" alt="'+long(b.date)+'"><figcaption>'+short(b.date)+'</figcaption></figure></div>'+
+    '<div class="row"><button class="btn ghost" data-tabgo="compare" style="flex:1">Compare</button><button class="btn amber" data-tabgo="develop" style="flex:1.4">Make your '+m+'-day video</button></div><button class="linkish" id="msHide">Hide this</button></section>';
 }
 function todayView(){
   const L=list(),today=ymd(new Date()),done=L.find(p=>p.date===today),first=L[0],last=L[L.length-1];
-  let h=installCard()+backupNudge();
+  let h=milestone()+installCard()+backupNudge();
   if(!L.length){
     h+='<section class="card empty">'+emptyArt+'<div class="h1">Day one starts here</div><p class="lead">One '+(S.track==='face'?'face':'full-body')+' photo a day, lined up with yesterday’s ghost. In a few weeks, develop them into a timelapse of how you’ve changed.</p>'+
       '<button class="btn" id="shoot">Take today’s photo</button><button class="btn ghost small" id="demo">See it with demo photos</button><p class="note">Photos stay on this phone. They are never uploaded.</p></section>';
@@ -302,7 +339,7 @@ function todayView(){
     (done?'<div class="print" style="max-width:300px;align-self:center;width:100%"><img src="'+url(done)+'" alt="Today’s photo"><div class="cap"><span>DAY '+String(L.indexOf(done)+1).padStart(3,'0')+'</span><span>'+short(today)+'</span></div></div>'+(done.note?'<p class="note" style="text-align:center">“'+esc(done.note)+'”</p>':'')+'<div class="row"><button class="btn ghost" id="shoot" style="flex:1">Retake</button><button class="btn amber" data-tabgo="develop" style="flex:1">Develop</button></div>':
      '<p class="lead">'+(last?'Last photo: '+short(last.date)+'. Line up with its ghost and keep the streak going.':'')+'</p><button class="btn" id="shoot">Take today’s photo</button>')+'</section>';
   h+='<div class="stats"><div class="stat"><b>'+streak(L)+'</b><span>day streak</span></div><div class="stat"><b>'+L.length+'</b><span>photos</span></div><div class="stat"><b>'+(first?daysBetween(first.date,today)+1:0)+'</b><span>days since day one</span></div></div>';
-  if(L.length>=2){h+='<section class="card"><div class="row" style="justify-content:space-between"><span class="label">The roll so far</span><button class="btn small ghost" data-tabgo="roll">See all</button></div><div class="strip"><div class="frames">'+L.slice(-12).map(p=>'<button data-photo="'+p.id+'"><img src="'+url(p)+'" alt="'+long(p.date)+'"><span>'+short(p.date)+'</span></button>').join('')+'</div></div></section>';}
+  if(L.length>=2){h+='<section class="card"><div class="row" style="justify-content:space-between"><span class="label">The roll so far</span><button class="btn small ghost" data-tabgo="roll">See all</button></div><div class="strip"><div class="frames">'+L.slice(-12).map(p=>'<button data-photo="'+p.id+'"><img src="'+turl(p)+'" alt="'+long(p.date)+'"><span>'+short(p.date)+'</span></button>').join('')+'</div></div></section>';}
   return h+tipsCard();
 }
 function tipsCard(){
@@ -314,7 +351,7 @@ function rollView(){
   if(!L.length)return '<section class="card empty">'+emptyArt+'<p class="lead">No photos on this roll yet.</p><button class="btn" id="shoot">Take the first one</button></section>';
   const first=L[0].date,today=ymd(new Date()),span=daysBetween(first,today)+1,byDate=new Map(L.map(p=>[p.date,p]));
   let cells='';for(let i=0;i<span&&i<400;i++){const d=new Date(parse(first));d.setDate(d.getDate()+i);const k=ymd(d),p=byDate.get(k);
-    cells+=p?'<button data-photo="'+p.id+'"><img src="'+url(p)+'" alt="'+long(k)+(p.note?': '+esc(p.note):'')+'" loading="lazy"><span>'+short(k)+'</span>'+(p.note?'<i class="nt" aria-hidden="true">✎</i>':'')+'</button>':'<div class="gap">'+short(k)+'</div>';}
+    cells+=p?'<button data-photo="'+p.id+'"><img src="'+turl(p)+'" alt="'+long(k)+(p.note?': '+esc(p.note):'')+'" loading="lazy" decoding="async"><span>'+short(k)+'</span>'+(p.note?'<i class="nt" aria-hidden="true">✎</i>':'')+(S.ref[S.track]===p.id?'<i class="rf" aria-label="Reference photo">★</i>':'')+'</button>':'<div class="gap">'+short(k)+'</div>';}
   return '<section class="card"><div class="row" style="justify-content:space-between"><span class="label">'+TRACK[S.track].name+' roll · '+L.length+' frames</span><button class="btn small ghost" id="import">Add from gallery</button></div><div class="grid">'+cells+'</div><p class="note">Missed days show as blank frames. Tap a photo to add a note, change its date or delete it. ✎ means it has a note.</p></section>';
 }
 function compareView(){
@@ -338,37 +375,62 @@ let player=null;
 function developView(){
   const L=list();
   if(L.length<3)return '<section class="card empty">'+emptyArt+'<p class="lead">You need at least 3 photos to develop a timelapse. You have '+L.length+'.</p>'+(L.length?'':'<button class="btn ghost small" id="demo">See it with demo photos</button>')+'</section>';
-  return '<section class="card"><span class="label">Develop · '+L.length+' frames</span><div class="print" style="transform:none;max-width:360px;align-self:center;width:100%"><canvas id="dv" width="720" height="960" aria-label="Timelapse preview"></canvas><div class="cap"><span id="dvF">FRAME 001</span><span id="dvD"></span></div></div>'+
+  return '<section class="card"><span class="label">Develop · '+L.length+' frames</span><div class="print" style="transform:none;max-width:360px;align-self:center;width:100%"><canvas id="dv" width="720" height="'+(S.vfmt==='916'?1280:960)+'"'+(S.vfmt==='916'?' class="tall"':'')+' aria-label="Timelapse preview"></canvas><div class="cap"><span id="dvF">FRAME 001</span><span id="dvD"></span></div></div>'+
    '<div class="row"><button class="btn ghost" id="dvPlay" style="flex:1">Pause</button><button class="btn" id="dvMake" style="flex:2">Make video</button></div><div class="devbar" id="dvBar" hidden><i></i></div><p class="note" id="dvMsg"></p></section>'+
+   '<section class="card"><span class="label">Shape</span><div class="chips" id="vfmt"><button class="chip" data-vf="34" aria-pressed="'+(S.vfmt==='34')+'">Photo 3:4</button><button class="chip" data-vf="916" aria-pressed="'+(S.vfmt==='916')+'">Status / Reels 9:16</button></div><p class="note">9:16 fills a WhatsApp status or Reel, with the dates in the bands above and below.</p></section>'+
    '<section class="card"><span class="label">Speed</span><div class="chips" id="fps">'+[[2,'Slow'],[4,'Steady'],[6,'Normal'],[10,'Quick'],[15,'Rapid']].map(([v,l])=>'<button class="chip" data-fps="'+v+'" aria-pressed="'+(S.fps===v)+'">'+l+'</button>').join('')+'</div>'+
    '<div class="tog"><div>Date on each frame<small>Like the stamp on old film photos</small></div><label class="switch"><input type="checkbox" id="stamp"'+(S.stamp?' checked':'')+' aria-label="Date stamp"><span></span></label></div>'+
    '<div class="tog"><div>Notes on frames<small>Shows each day’s note, like “78 kg” or “started gym”</small></div><label class="switch"><input type="checkbox" id="notesT"'+(S.notes?' checked':'')+' aria-label="Notes on frames"><span></span></label></div>'+
    '<div class="tog"><div>Smooth fades<small>Blends each frame into the next</small></div><label class="switch"><input type="checkbox" id="fade"'+(S.fade?' checked':'')+' aria-label="Smooth fades"><span></span></label></div>'+
-   '<p class="note">Video length: about <b class="num" id="dvLen"></b>. It holds on the last frame for a second at the end.</p></section>';
+   '<div class="tog"><div>Even out the lighting<small>Brightens dark days and calms bright ones, so the video doesn’t flicker</small></div><label class="switch"><input type="checkbox" id="evenL"'+(S.evenLight?' checked':'')+' aria-label="Even out the lighting"><span></span></label></div>'+
+   '<div class="tog"><div>Morphē tag at the end<small>A short “Made with Morphē” card, so friends know which app</small></div><label class="switch"><input type="checkbox" id="endT"'+(S.endTag?' checked':'')+' aria-label="Morphē tag at the end"><span></span></label></div>'+
+   '<p class="note">Video length: about <b class="num" id="dvLen"></b>. It holds on the last frame for a moment at the end.</p></section>';
 }
 const imgCache=new Map();
 function loadImg(p){if(imgCache.has(p.id))return imgCache.get(p.id);const pr=new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url(p);});imgCache.set(p.id,pr);return pr;}
-function drawFrame(ctx,W,H,a,b,t,p,idx,total){
+let DEV={target:0,days:0};
+function lumTarget(L){const v=L.map(p=>p.lum).filter(x=>x!=null).sort((a,b)=>a-b);return v.length?v[Math.floor(v.length/2)]:0;}
+const canFilter=(()=>{try{const c=document.createElement('canvas').getContext('2d');c.filter='brightness(1.2)';return c.filter==='brightness(1.2)';}catch(e){return false;}})();
+function drawFrame(ctx,W,H,a,b,t,p,idx,total,pb){
   ctx.fillStyle='#120C0C';ctx.fillRect(0,0,W,H);
-  const cover=(im,al)=>{if(!im)return;ctx.globalAlpha=al;const r=Math.max(W/im.width,H/im.height),w=im.width*r,h=im.height*r;ctx.drawImage(im,(W-w)/2,(H-h)/2,w,h);ctx.globalAlpha=1;};
-  cover(a,1);if(b&&t>0)cover(b,t);
-  if(S.stamp){const label=long(p.date);ctx.font='600 '+Math.round(W*0.042)+'px "IBM Plex Mono", monospace';ctx.textAlign='right';ctx.textBaseline='bottom';
-    ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillText(label,W-W*0.045+2,H-W*0.045+2);ctx.fillStyle='#F2A541';ctx.fillText(label,W-W*0.045,H-W*0.045);
-    ctx.textAlign='left';ctx.font='600 '+Math.round(W*0.032)+'px "IBM Plex Mono", monospace';ctx.fillStyle='rgba(243,236,225,.85)';ctx.fillText('DAY '+String(idx+1).padStart(3,'0')+' / '+total,W*0.045,H-W*0.045);}
+  const tall=H/W>1.5,ah=tall?Math.round(W*4/3):H,ay=tall?Math.round((H-ah)/2):0;
+  const gain=q=>(S.evenLight&&canFilter&&DEV.target&&q&&q.lum)?Math.max(.75,Math.min(1.35,DEV.target/q.lum)):1;
+  const cover=(im,al,q,x,y,w,h,extra)=>{if(!im)return;ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.globalAlpha=al;const gn=gain(q);
+    const f=(gn!==1?'brightness('+gn.toFixed(3)+') ':'')+(extra||'');if(canFilter&&f)ctx.filter=f.trim();
+    const r=Math.max(w/im.width,h/im.height),iw=im.width*r,ih=im.height*r;ctx.drawImage(im,x+(w-iw)/2,y+(h-ih)/2,iw,ih);ctx.restore();};
+  if(tall){cover(a,1,p,-40,-40,W+80,H+80,canFilter?'blur(28px) brightness(.4)':'');if(!canFilter){ctx.fillStyle='rgba(18,12,12,.7)';ctx.fillRect(0,0,W,H);}}
+  cover(a,1,p,0,ay,W,ah);if(b&&t>0)cover(b,t,pb,0,ay,W,ah);
+  const pm=W*0.045;
+  if(tall){
+    ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#F3ECE1';ctx.font='italic 700 '+Math.round(W*0.085)+'px "Cormorant Garamond", Georgia, serif';ctx.fillText('Morphē',W/2,ay*0.42);
+    ctx.font='600 '+Math.round(W*0.03)+'px "IBM Plex Mono", monospace';ctx.fillStyle='rgba(243,236,225,.7)';ctx.fillText((S.track==='face'?'FACE':'FULL BODY')+' · '+DEV.days+' DAYS',W/2,ay*0.74);
+    if(S.stamp){ctx.font='600 '+Math.round(W*0.06)+'px "IBM Plex Mono", monospace';ctx.fillStyle='#F2A541';ctx.fillText(long(p.date),W/2,ay+ah+(H-ay-ah)*0.4);
+      ctx.font='600 '+Math.round(W*0.032)+'px "IBM Plex Mono", monospace';ctx.fillStyle='rgba(243,236,225,.8)';ctx.fillText('DAY '+String(idx+1).padStart(3,'0')+' / '+total,W/2,ay+ah+(H-ay-ah)*0.72);}
+  }else if(S.stamp){const label=long(p.date);ctx.font='600 '+Math.round(W*0.042)+'px "IBM Plex Mono", monospace';ctx.textAlign='right';ctx.textBaseline='bottom';
+    ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillText(label,W-pm+2,H-pm+2);ctx.fillStyle='#F2A541';ctx.fillText(label,W-pm,H-pm);
+    ctx.textAlign='left';ctx.font='600 '+Math.round(W*0.032)+'px "IBM Plex Mono", monospace';ctx.fillStyle='rgba(243,236,225,.85)';ctx.fillText('DAY '+String(idx+1).padStart(3,'0')+' / '+total,pm,H-pm);}
   if(S.notes&&p.note){const fs=Math.round(W*0.045);ctx.font='700 '+fs+'px "Manrope", system-ui, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';
-    let t=p.note;while(ctx.measureText(t).width>W*0.86&&t.length>4)t=t.slice(0,-2);if(t!==p.note)t=t.replace(/.$/,'…');
-    const tw=ctx.measureText(t).width,x=W*0.045,y=W*0.045;ctx.fillStyle='rgba(14,9,9,.72)';ctx.fillRect(x-10,y-8,tw+20,fs+16);ctx.fillStyle='#F3ECE1';ctx.fillText(t,x,y);}
+    let tx=p.note;while(ctx.measureText(tx).width>W*0.86&&tx.length>4)tx=tx.slice(0,-2);if(tx!==p.note)tx=tx.replace(/.$/,'…');
+    const tw=ctx.measureText(tx).width,x=pm,y=ay+pm;ctx.fillStyle='rgba(14,9,9,.72)';ctx.fillRect(x-10,y-8,tw+20,fs+16);ctx.fillStyle='#F3ECE1';ctx.fillText(tx,x,y);}
+}
+function drawEnd(ctx,W,H,k){
+  ctx.fillStyle='rgba(14,9,9,'+(0.88*k).toFixed(3)+')';ctx.fillRect(0,0,W,H);ctx.globalAlpha=k;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#F3ECE1';ctx.font='italic 700 '+Math.round(W*0.13)+'px "Cormorant Garamond", Georgia, serif';ctx.fillText('Morphē',W/2,H/2-W*0.05);
+  ctx.font='600 '+Math.round(W*0.034)+'px "IBM Plex Mono", monospace';ctx.fillStyle='#F2A541';ctx.fillText('IANYARKO.GITHUB.IO/MORPHE',W/2,H/2+W*0.07);ctx.globalAlpha=1;
 }
 async function wireDevelop(){
   stopPlayer();const L=list();if(L.length<3)return;
-  const len=()=>{const s=L.length/S.fps+1;$('#dvLen').textContent=s<60?s.toFixed(1)+' s':Math.floor(s/60)+' min '+Math.round(s%60)+' s';};len();
+  DEV={target:lumTarget(L),days:daysBetween(L[0].date,L[L.length-1].date)+1};
+  const len=()=>{const s=L.length/S.fps+0.8+(S.endTag?1.6:0.2);$('#dvLen').textContent=s<60?s.toFixed(1)+' s':Math.floor(s/60)+' min '+Math.round(s%60)+' s';};len();
   $('#fps').onclick=e=>{const b=e.target.closest('[data-fps]');if(!b)return;S.fps=+b.dataset.fps;saveS();$$('#fps .chip').forEach(c=>c.setAttribute('aria-pressed',String(+c.dataset.fps===S.fps)));len();};
   $('#stamp').onchange=e=>{S.stamp=e.target.checked;saveS();};$('#fade').onchange=e=>{S.fade=e.target.checked;saveS();};$('#notesT').onchange=e=>{S.notes=e.target.checked;saveS();};
+  $('#evenL').onchange=e=>{S.evenLight=e.target.checked;saveS();};$('#endT').onchange=e=>{S.endTag=e.target.checked;saveS();len();};
+  $('#vfmt').onclick=e=>{const b=e.target.closest('[data-vf]');if(!b||S.vfmt===b.dataset.vf)return;S.vfmt=b.dataset.vf;saveS();render();};
   const cv=$('#dv'),ctx=cv.getContext('2d');player={i:0,t0:performance.now(),playing:true,raf:0};
   const imgs=await Promise.all(L.map(loadImg).map(p=>p.catch(()=>null)));
   const loop=now=>{if(!player||!document.body.contains(cv))return;
     if(player.playing){const per=1000/S.fps,el=now-player.t0,i=Math.floor(el/per)%L.length,f=(el%per)/per;
-      const t=S.fade&&i<L.length-1?Math.max(0,(f-0.55)/0.45):0;drawFrame(ctx,cv.width,cv.height,imgs[i],imgs[i+1],t,L[i],i,L.length);
+      const t=S.fade&&i<L.length-1?Math.max(0,(f-0.55)/0.45):0;drawFrame(ctx,cv.width,cv.height,imgs[i],imgs[i+1],t,L[i],i,L.length,L[i+1]);
       $('#dvF').textContent='FRAME '+String(i+1).padStart(3,'0');$('#dvD').textContent=short(L[i].date);}
     player.raf=requestAnimationFrame(loop);};
   player.raf=requestAnimationFrame(loop);
@@ -379,21 +441,21 @@ function stopPlayer(){if(player){cancelAnimationFrame(player.raf);player=null;}}
 function pickMime(){const c=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];if(!window.MediaRecorder)return null;for(const m of c){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}return '';}
 async function makeVideo(L,imgs){
   const mime=pickMime();if(mime===null){toast('This browser can’t make videos. Try Chrome or Safari.');return;}
-  const cv=document.createElement('canvas');cv.width=720;cv.height=960;const ctx=cv.getContext('2d');
-  drawFrame(ctx,720,960,imgs[0],null,0,L[0],0,L.length);
+  const W=720,H=S.vfmt==='916'?1280:960,cv=document.createElement('canvas');cv.width=W;cv.height=H;const ctx=cv.getContext('2d');
+  drawFrame(ctx,W,H,imgs[0],null,0,L[0],0,L.length);
   const stream=cv.captureStream(30);let rec;try{rec=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:5e6}:{videoBitsPerSecond:5e6});}catch(e){try{rec=new MediaRecorder(stream);}catch(err){toast('This browser can’t make videos. Try Chrome or Safari.');return;}}
   const chunks=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
   const btn=$('#dvMake'),bar=$('#dvBar');btn.disabled=true;btn.textContent='Developing…';bar.hidden=false;$('#dvMsg').textContent='Keep this screen open while it develops.';
   if(player)player.playing=false;
-  const per=1000/S.fps,total=L.length*per+1000;rec.start(250);const t0=performance.now();
+  const per=1000/S.fps,hold=L.length*per+800,total=hold+(S.endTag?1600:200);rec.start(250);const t0=performance.now();
   await new Promise(res=>{const step=()=>{const el=performance.now()-t0;
       if(el>=total){res();return;}
       const i=Math.min(L.length-1,Math.floor(el/per)),f=(el%per)/per,t=S.fade&&i<L.length-1&&el<L.length*per?Math.max(0,(f-0.55)/0.45):0;
-      drawFrame(ctx,720,960,imgs[i],imgs[i+1],t,L[i],i,L.length);bar.firstChild.style.width=(el/total*100).toFixed(1)+'%';
+      drawFrame(ctx,W,H,imgs[i],imgs[i+1],t,L[i],i,L.length,L[i+1]);if(S.endTag&&el>hold)drawEnd(ctx,W,H,Math.min(1,(el-hold)/500));bar.firstChild.style.width=(el/total*100).toFixed(1)+'%';
       setTimeout(step,1000/30);};step();});
   await new Promise(res=>{rec.onstop=res;rec.stop();});
   const type=(rec.mimeType||mime||'video/webm').split(';')[0],ext=type.includes('mp4')?'mp4':'webm';
-  const blob=new Blob(chunks,{type}),name='morphe-'+S.track+'-'+ymd(new Date())+'.'+ext;
+  const blob=new Blob(chunks,{type}),name='morphe-'+S.track+(S.vfmt==='916'?'-status':'')+'-'+ymd(new Date())+'.'+ext;
   btn.disabled=false;btn.textContent='Make video';bar.hidden=true;if(player){player.playing=true;player.t0=performance.now();}
   showVideo(blob,name,ext);
 }
@@ -412,13 +474,13 @@ const guideSVG=t=>t==='face'?
   '<svg class="guide" viewBox="0 0 300 400" preserveAspectRatio="none" aria-hidden="true"><ellipse cx="150" cy="170" rx="78" ry="104"/><line x1="150" y1="40" x2="150" y2="300"/><line x1="90" y1="160" x2="210" y2="160"/><path d="M40 400c8-60 50-92 110-96 60 4 102 36 110 96"/></svg>':
   '<svg class="guide" viewBox="0 0 300 400" preserveAspectRatio="none" aria-hidden="true"><ellipse cx="150" cy="58" rx="22" ry="28"/><path d="M150 86v14M104 108c20-10 72-10 92 0l10 92M104 108l-10 92M118 180l-4 110 10 96M182 180l4 110-10 96M118 180h64M150 300v86"/><line x1="40" y1="388" x2="260" y2="388"/></svg>';
 async function openCam(){
-  const L=list(),last=L.filter(p=>p.date!==ymd(new Date())).pop()||L[L.length-1];
+  const L=list(),ref=refPhoto(),last=ref||L.filter(p=>p.date!==ymd(new Date())).pop()||L[L.length-1];
   const face=S.track==='face';
   cam={facing:'user',timer:S.timer[S.track]||0,stream:null,count:0};
   $('#camHost').innerHTML='<div class="cam" role="dialog" aria-label="Camera"><div class="vf"><div class="box" id="cbox"><video id="cv" playsinline autoplay muted class="mirror"></video>'+
     '<div id="calign"></div>'+(S.guide?guideSVG(S.track):'')+
     '<div class="camerr" id="cerr" hidden></div><div class="cdown" id="cdown"></div></div>'+
-    '<div class="smart" id="cSmart" hidden></div><div class="ctop"><button class="pill" id="cClose">Close</button><span class="pill">'+(last?'MATCHING '+short(last.date):'FIRST FRAME')+'</span></div></div>'+
+    '<div class="smart" id="cSmart" hidden></div><div class="lightp" id="cLight" hidden></div><div class="ctop"><button class="pill" id="cClose">Close</button><span class="pill">'+(last?(ref?'REFERENCE ★ ':'MATCHING ')+short(last.date):'FIRST FRAME')+'</span></div></div>'+
     '<div class="cbar">'+(last?'<div class="amode" role="group" aria-label="How to show your last photo">'+[['outline','Outline'],['split','Split'],['ghost','Ghost'],['off','Off']].map(([k,l])=>'<button data-am="'+k+'" aria-pressed="'+(S.align===k)+'">'+l+'</button>').join('')+'</div>'+
       '<div class="slider" id="cSl"><span id="cSlL"></span><input type="range" id="cGh" min="10" max="100" aria-label="Strength"><span id="cGhV"></span></div>':'')+
     '<div class="ctl"><div class="side"><button class="sbtn" id="cTimer">'+timerLabel()+'</button><button class="sbtn" id="cGuide" aria-pressed="'+S.guide+'">'+(S.guide?'Guide on':'Guide off')+'</button></div>'+
@@ -432,7 +494,7 @@ async function openCam(){
   $('#cTimer').onclick=()=>{const seq=[0,3,10];cam.timer=seq[(seq.indexOf(cam.timer)+1)%3];S.timer[S.track]=cam.timer;saveS();$('#cTimer').textContent=timerLabel();};
   $('#cGuide').onclick=()=>{S.guide=!S.guide;saveS();const box=$('#cbox'),g=box.querySelector('svg.guide');if(g)g.remove();if(S.guide)box.insertAdjacentHTML('beforeend',guideSVG(S.track));$('#cGuide').textContent=S.guide?'Guide on':'Guide off';};
   if($('#cGh'))$('#cGh').oninput=e=>{const v=+e.target.value;if(S.align==='ghost')S.ghost=v;else S.outl=v;$('#cGhV').textContent=v+'%';const o=$('#calign img');if(o)o.style.opacity=v/100;saveS();};
-  startStream().then(()=>{if(S.smart)smartStart();});
+  startStream().then(()=>{if(S.smart)smartStart();if(cam)cam.lightT=setInterval(lightCheck,600);});
 }
 const timerLabel=()=>cam.timer?'Timer '+cam.timer+'s':'Timer off';
 async function startStream(){
@@ -441,9 +503,18 @@ async function startStream(){
   try{cam.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:cam.facing,width:{ideal:1440},height:{ideal:1920}},audio:false});v.srcObject=cam.stream;v.classList.toggle('mirror',cam.facing==='user');$('#cerr').hidden=true;}
   catch(e){camErr(e&&e.name==='NotAllowedError'?'Camera access is blocked. Allow the camera for this site in your browser settings, or tap File to use a photo instead.':'Couldn’t open the camera. Tap File to use a photo instead.');}
 }
+function lightCheck(){
+  const v=$('#cv'),el=$('#cLight');if(!cam||!v||!el||!v.videoWidth)return;
+  const c=lightCheck.c||(lightCheck.c=document.createElement('canvas'));c.width=32;c.height=32;const g=c.getContext('2d',{willReadFrequently:true});
+  g.drawImage(v,v.videoWidth*.25,v.videoHeight*.125,v.videoWidth*.5,v.videoHeight*.75,0,0,32,32);
+  const d=g.getImageData(0,0,32,32).data;let s=0;for(let i=0;i<d.length;i+=4)s+=d[i]*.299+d[i+1]*.587+d[i+2]*.114;const L=s/1024,ref=cam.last&&cam.last.lum;
+  let m='';if(L<60)m='Too dark. Face a window or switch on a light';else if(L>215)m='Too bright. Step out of direct sun';
+  else if(ref!=null&&L<ref-28)m='Darker than '+short(cam.last.date)+'. Find more light';else if(ref!=null&&L>ref+28)m='Brighter than '+short(cam.last.date)+'. Move away from the light a little';
+  el.hidden=!m;el.textContent='☀ '+m;
+}
 function camErr(m){const e=$('#cerr');if(e){e.hidden=false;e.textContent=m;}}
 function stopStream(){if(cam&&cam.stream){cam.stream.getTracks().forEach(t=>t.stop());cam.stream=null;}}
-function closeCam(){smartStop();stopStream();clearInterval(cam&&cam.cd);$('#camHost').innerHTML='';cam=null;}
+function closeCam(){if(cam)clearInterval(cam.lightT);smartStop();stopStream();clearInterval(cam&&cam.cd);$('#camHost').innerHTML='';cam=null;}
 function shoot(){
   if(!cam||cam.busy)return;const v=$('#cv');if(!cam.stream||!v.videoWidth){toast('Camera isn’t ready yet.');return;}
   if(cam.timer){cam.busy=true;let n=cam.timer;const el=$('#cdown');el.textContent=n;cam.cd=setInterval(()=>{n--;if(n<=0){clearInterval(cam.cd);el.textContent='';cam.busy=false;grab();}else el.textContent=n;},1000);}
@@ -464,7 +535,7 @@ async function fromFile(f){
 }
 function review(blob,fromGallery){
   let u=URL.createObjectURL(blob);const today=ymd(new Date());
-  const prev=list().filter(p=>p.date!==today).pop()||list()[list().length-1];
+  const prev=refPhoto()||list().filter(p=>p.date!==today).pop()||list()[list().length-1];
   sheet('<span class="label">'+(fromGallery?'Add a photo':'Developing')+'</span><div class="print"><img id="rImg" src="'+u+'" alt="New photo"><div class="cap"><span>'+TRACK[S.track].name.toUpperCase()+'</span><span>'+short(today)+'</span></div></div>'+
     (S.smart&&prev?'<p class="note" id="rAuto" style="text-align:center">Smart aligning…</p>':'')+
     (prev?'<button class="btn ghost" id="rAdj">Adjust to match '+short(prev.date)+'</button>':'')+
@@ -479,9 +550,10 @@ function review(blob,fromGallery){
     blob=r.blob;URL.revokeObjectURL(u);u=URL.createObjectURL(blob);$('#rImg').src=u;n.textContent='Auto-aligned to day one ✓';});
   if($('#rAdj'))$('#rAdj').onclick=()=>adjust(blob,prev,nb=>{blob=nb;URL.revokeObjectURL(u);u=URL.createObjectURL(nb);$('#rImg').src=u;$('#rAdj').textContent='Adjusted ✓ · adjust again';});
   $('#rKeep').onclick=async()=>{const d=$('#rDate').value||today;
-    try{for(const p of list().filter(p=>p.date===d&&!p.demo)){await delPhoto(p.id);urls.delete(p.id);imgCache.delete(p.id);}
-      const note=$('#rNote').value.trim().slice(0,60);await putPhoto({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),track:S.track,date:d,blob,createdAt:Date.now(),note});
-      await loadPhotos();closeSheet();tab='today';render();const n=list().length;toast(n===1?'Day one, developed.':'Frame '+n+' developed.');}
+    try{for(const p of list().filter(p=>p.date===d&&!p.demo)){await delPhoto(p.id);forget(p.id);}
+      const note=$('#rNote').value.trim().slice(0,60);let th={};try{th=await makeThumb(blob);}catch(e){}
+      await putPhoto({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),track:S.track,date:d,blob,thumb:th.thumb,lum:th.lum,createdAt:Date.now(),note});
+      await loadPhotos();closeSheet();tab='today';render();const n=real().length;toast(n===1?'Day one, developed.':MILES.includes(n)?n+' photos! Milestone unlocked 🎉':'Frame '+n+' developed.');}
     catch(e){toast('Couldn’t save. Your phone may be out of space.');}};
 }
 
@@ -583,7 +655,7 @@ async function photoPts(p){
   try{const im=await loadImg(p);const pts=await detect(p.track,im);p.lm={track:p.track,pts};try{await putPhoto(p);}catch(e){}return pts;}catch(e){return null;}
 }
 /* the anchor everything is aligned to: the first photo on this roll that has landmarks */
-async function anchorPts(){for(const p of list()){if(p.demo)continue;const pts=await photoPts(p);if(pts)return pts;}return null;}
+async function anchorPts(){const rf=refPhoto();if(rf){const pts=await photoPts(rf);if(pts)return pts;}for(const p of list()){if(p.demo)continue;const pts=await photoPts(p);if(pts)return pts;}return null;}
 /* video coords -> displayed/saved 3:4 frame coords (cover crop, mirrored for the front camera) */
 function toFrame(pt,vw,vh,mirror){const W=3,H=4,r=Math.max(W/vw,H/vh);let x=(pt[0]*vw*r-(vw*r-W)/2)/W,y=(pt[1]*vh*r-(vh*r-H)/2)/H;if(mirror)x=1-x;return [x,y];}
 function compare(now,ref){
@@ -653,13 +725,15 @@ function openPhoto(id){
   sheet('<div class="print"><img src="'+url(p)+'" alt="'+long(p.date)+'"><div class="cap"><span>DAY '+String(i+1).padStart(3,'0')+'</span><span>'+long(p.date)+'</span></div></div>'+
    '<div class="field"><label class="note" for="pNote">Note</label><input type="text" id="pNote" maxlength="60" value="'+esc(p.note||'')+'" placeholder="e.g. 78 kg · started gym"></div>'+
    '<div class="field"><label class="note" for="pDate">Date</label><input type="date" id="pDate" value="'+p.date+'" max="'+ymd(new Date())+'"></div>'+
+   (p.demo?'':'<button class="btn ghost small" id="pRef">'+(S.ref[S.track]===p.id?'★ Reference photo · tap to stop using it':'☆ Line up future photos to this one')+'</button><p class="note">'+(S.ref[S.track]===p.id?'The camera outline and Adjust use this photo instead of yesterday’s.':'Pick your best-lined-up photo. The camera will show its outline every day, so small drifts don’t add up.')+'</p>')+
    '<div class="row"><button class="btn ghost" id="pDel" style="flex:1">Delete</button><button class="btn" id="pDone" style="flex:1">Done</button></div><div id="pConf"></div>');
+  if($('#pRef'))$('#pRef').onclick=()=>{S.ref[S.track]=S.ref[S.track]===p.id?null:p.id;saveS();toast(S.ref[S.track]?'Reference set: '+long(p.date):'Back to matching yesterday');openPhoto(p.id);if(tab==='roll')render();};
   $('#pDone').onclick=async()=>{const d=$('#pDate').value,nt=$('#pNote').value.trim().slice(0,60);let ch=false;
     if(d&&d!==p.date){if(list().some(x=>x.date===d&&x.id!==p.id)){toast('There’s already a photo on '+long(d)+'.');return;}p.date=d;ch=true;}
     if(nt!==(p.note||'')){p.note=nt;ch=true;}
     if(ch){await putPhoto(p);await loadPhotos();}closeSheet();render();};
   $('#pDel').onclick=()=>{$('#pConf').innerHTML='<div class="row"><span class="note" style="flex:1">Delete this photo for good?</span><button class="btn small" id="pYes">Delete</button></div>';
-    $('#pYes').onclick=async()=>{await delPhoto(p.id);urls.delete(p.id);imgCache.delete(p.id);await loadPhotos();closeSheet();render();toast('Photo deleted');};};
+    $('#pYes').onclick=async()=>{if(S.ref[S.track]===p.id){S.ref[S.track]=null;saveS();}await delPhoto(p.id);forget(p.id);await loadPhotos();closeSheet();render();toast('Photo deleted');};};
 }
 function sheet(html){$('#sheetHost').innerHTML='<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true">'+html+'</div></div>';$('#scrim').onclick=e=>{if(e.target.id==='scrim')closeSheet();};}
 function closeSheet(){$('#sheetHost').innerHTML='';}
@@ -671,22 +745,46 @@ function openSettings(){
   sheet('<div class="row" style="justify-content:space-between"><div class="h1">Settings</div><button class="btn small ghost" id="sClose">Close</button></div>'+
    '<section class="card"><span class="label">Privacy</span><div class="tog"><div>PIN lock<small>Asks for a 4-digit PIN when Morphē opens</small></div><label class="switch"><input type="checkbox" id="sPin"'+(S.pin?' checked':'')+' aria-label="PIN lock"><span></span></label></div>'+
    '<p class="note">Photos are stored only on this phone, in this browser. They are never uploaded. The PIN stops someone casually opening the app; it does not encrypt the photos.</p></section>'+
-   (S.smartUnlocked?'<section class="card"><span class="label">Smart align · beta</span>'+
+   '<section class="card"><span class="label">Smart align · beta</span>'+
      '<div class="tog"><div>Smart align<small>On-phone AI finds your eyes (face) or shoulders and hips (body), coaches you live and straightens each photo to match day one</small></div><label class="switch"><input type="checkbox" id="sSmart"'+(S.smart?' checked':'')+' aria-label="Smart align"><span></span></label></div>'+
      '<div class="tog"><div>Auto-capture<small>Takes the photo by itself when you’re lined up and still</small></div><label class="switch"><input type="checkbox" id="sAuto"'+(S.autoShoot?' checked':'')+' aria-label="Auto-capture"><span></span></label></div>'+
-     '<p class="note" id="sSmartN">The AI downloads once (about 5–10 MB), then works offline. Photos are analysed on your phone and never sent anywhere.</p></section>':'')+
+     '<p class="note" id="sSmartN">The AI downloads once (about 5–10 MB), then works offline. Photos are analysed on your phone and never sent anywhere.</p></section>'+
    '<section class="card"><span class="label">Backup · '+n+' photos</span><p class="note">Save every photo in one .zip file. Restore it on a new phone, or if you clear your browser. Keep the file somewhere private.</p><div class="row"><button class="btn amber" id="bSave" style="flex:1">Save backup</button><button class="btn ghost" id="bLoad" style="flex:1">Restore</button></div><div class="devbar" id="bBar" hidden><i></i></div></section>'+
+   '<section class="card"><span class="label">Daily reminder</span><p class="note">Websites can’t ping you every day by themselves, so add a daily reminder to your calendar instead.</p>'+
+   '<div class="field"><label class="note" for="sRemT">Remind me at</label><input type="time" id="sRemT" value="'+esc(S.remind||'07:30')+'"></div>'+
+   '<div class="row"><a class="btn ghost" id="sGcal" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none">Google Calendar</a><button class="btn ghost" id="sIcs" style="flex:1">Other calendar</button></div><p class="note">Use “Other calendar” on iPhone.</p></section>'+
+   '<section class="card"><span class="label">Storage</span><p class="note" id="sStore">Checking…</p></section>'+
    '<section class="card"><span class="label">Start over</span><button class="btn ghost" id="sWipe">Delete all photos</button><div id="sWipeC"></div></section>');
   $('#sClose').onclick=closeSheet;
   if($('#sSmart'))$('#sSmart').onchange=async e=>{S.smart=e.target.checked;saveS();if(S.smart){$('#sSmartN').textContent='Downloading the AI for '+TRACK[S.track].name+'…';try{await aiGet(S.track);$('#sSmartN').textContent='Ready ✓ It also downloads for the other mode the first time you use it.';}catch(err){$('#sSmartN').textContent='Couldn’t download it. Check your internet and try again.';S.smart=false;e.target.checked=false;saveS();}}};
   if($('#sAuto'))$('#sAuto').onchange=e=>{S.autoShoot=e.target.checked;saveS();};
   $('#sPin').onchange=e=>{if(e.target.checked){e.target.checked=false;pinPad('set');}else{S.pin=null;saveS();toast('PIN lock off');}};
   $('#bSave').onclick=backupSave;$('#bLoad').onclick=()=>$('#pickBackup').click();
+  const gc=()=>{S.remind=$('#sRemT').value||'07:30';saveS();$('#sGcal').href=reminderLink();};gc();$('#sRemT').onchange=gc;$('#sIcs').onclick=()=>{gc();reminderIcs();};
+  storageInfo().then(t=>{const el=$('#sStore');if(el)el.innerHTML=t;});
   $('#sWipe').onclick=()=>{$('#sWipeC').innerHTML='<div class="row" style="margin-top:8px"><span class="note" style="flex:1">Delete all '+n+' photos from this phone? Save a backup first if you want them.</span><button class="btn small" id="sWipeY">Delete all</button></div>';
-    $('#sWipeY').onclick=async()=>{await clearAll();urls.clear();imgCache.clear();await loadPhotos();closeSheet();render();toast('All photos deleted');};};
+    $('#sWipeY').onclick=async()=>{await clearAll();urls.clear();turls.clear();imgCache.clear();await loadPhotos();closeSheet();render();toast('All photos deleted');};};
 }
+function remStart(){const [h,m]=(S.remind||'07:30').split(':').map(Number),d=new Date();d.setDate(d.getDate()+1);d.setHours(h||7,m||0,0,0);return d;}
+const icsT=d=>d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'T'+pad(d.getHours())+pad(d.getMinutes())+'00';
+function reminderLink(){const a=remStart(),b=new Date(a.getTime()+5*6e4);let tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){}
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent('📸 Morphē photo')+'&details='+encodeURIComponent('Same spot, same light. Open Morphē: '+location.href.split('#')[0])+'&dates='+icsT(a)+'/'+icsT(b)+'&recur='+encodeURIComponent('RRULE:FREQ=DAILY')+(tz?'&ctz='+encodeURIComponent(tz):'');}
+function reminderIcs(){const a=remStart(),b=new Date(a.getTime()+5*6e4),u=location.href.split('#')[0];
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Morphe//EN','BEGIN:VEVENT','UID:morphe-daily-'+Date.now()+'@ianyarko.github.io','DTSTAMP:'+icsT(new Date()),'DTSTART:'+icsT(a),'DTEND:'+icsT(b),'RRULE:FREQ=DAILY','SUMMARY:📸 Morphē photo','DESCRIPTION:Same spot\, same light. Open Morphē: '+u,'URL:'+u,'BEGIN:VALARM','TRIGGER:PT0M','ACTION:DISPLAY','DESCRIPTION:Time for today’s Morphē photo','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
+  const blob=new Blob([ics],{type:'text/calendar'}),h=URL.createObjectURL(blob),el=document.createElement('a');el.href=h;el.download='morphe-reminder.ics';document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(h),8000);
+  toast('Open the downloaded file to add the reminder.');}
+const mb=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':(b/1e6).toFixed(b<1e7?1:0)+' MB';
+async function storageInfo(){
+  const all=[...PH.face,...PH.body].filter(p=>!p.demo);let bytes=0;all.forEach(p=>{bytes+=(p.blob&&p.blob.size||0)+(p.thumb&&p.thumb.size||0);});
+  let t='Your photos use <b class="num">'+mb(bytes)+'</b> ('+all.length+' photo'+(all.length===1?'':'s')+').';
+  try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();if(e.quota)t+=' Room for about <b class="num">'+mb(Math.max(0,e.quota-e.usage))+'</b> more.';}}catch(e){}
+  try{if(navigator.storage&&navigator.storage.persisted){t+=(await navigator.storage.persisted())?' Protected from automatic clearing ✓':' Not protected yet: add Morphē to your Home Screen to keep photos safe.';}}catch(e){}
+  return t;
+}
+let zipP=null;
+function needZip(){if(window.JSZip)return Promise.resolve();if(!zipP)zipP=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';sc.onload=res;sc.onerror=()=>{zipP=null;rej();};document.head.appendChild(sc);});return zipP;}
 async function backupSave(){
-  if(!window.JSZip){toast('Backup needs an internet connection the first time. Try again online.');return;}
+  try{await needZip();}catch(e){toast('Backup needs an internet connection the first time. Try again online.');return;}
   const all=[...PH.face,...PH.body].filter(p=>!p.demo);if(!all.length){toast('No photos to back up yet.');return;}
   const zip=new JSZip(),meta=[];const bar=$('#bBar');bar.hidden=false;
   all.forEach((p,i)=>{const f=p.track+'/'+p.date+'-'+p.id+'.jpg';zip.file(f,p.blob);meta.push({id:p.id,track:p.track,date:p.date,file:f,createdAt:p.createdAt,note:p.note||''});});
@@ -697,7 +795,7 @@ async function backupSave(){
   S.lastBackup=Date.now();S.backupCount=all.length;saveS();toast('Backup saved: '+name);if(!$('#sClose'))render();
 }
 async function backupRestore(f){
-  if(!window.JSZip){toast('Restore needs an internet connection the first time.');return;}
+  try{await needZip();}catch(e){toast('Restore needs an internet connection the first time.');return;}
   try{const zip=await JSZip.loadAsync(f);const m=zip.file('morphe.json');if(!m)throw 0;const data=JSON.parse(await m.async('string'));if(data.app!=='morphe')throw 0;
     const have=new Set([...PH.face,...PH.body].map(p=>p.track+p.date));let added=0;
     for(const p of data.photos){if(have.has(p.track+p.date))continue;const zf=zip.file(p.file);if(!zf)continue;const blob=new Blob([await zf.async('arraybuffer')],{type:'image/jpeg'});await putPhoto({id:p.id,track:p.track,date:p.date,blob,createdAt:p.createdAt||Date.now(),note:p.note||''});added++;}
@@ -748,7 +846,7 @@ async function makeDemo(){
   }
   await loadPhotos();render();toast('Demo photos loaded. Try Roll, Compare and Develop.');
 }
-async function removeDemo(){for(const p of list().filter(p=>p.demo)){await delPhoto(p.id);urls.delete(p.id);imgCache.delete(p.id);}await loadPhotos();render();}
+async function removeDemo(){for(const p of list().filter(p=>p.demo)){await delPhoto(p.id);forget(p.id);}await loadPhotos();render();}
 
 
 /* ---------- first-run tour ---------- */
@@ -768,7 +866,6 @@ function tourShow(i){
 }
 async function persist(){try{if(navigator.storage&&navigator.storage.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist();}catch(e){}}
 
-let logoTaps=0,logoT=0;
 /* ---------- events ---------- */
 $('nav.tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;tab=b.dataset.tab;stopPlayer();render();window.scrollTo(0,0);});
 $('#app').addEventListener('click',e=>{
@@ -776,7 +873,6 @@ $('#app').addEventListener('click',e=>{
   const tg=e.target.closest('[data-tabgo]');if(tg){tab=tg.dataset.tabgo;stopPlayer();render();window.scrollTo(0,0);return;}
   const ph=e.target.closest('[data-photo]');if(ph){openPhoto(ph.dataset.photo);return;}
   const id=e.target.id;
-  if(e.target.closest('#logo')){const n=Date.now();logoTaps=(n-logoT<1500?logoTaps:0)+1;logoT=n;if(logoTaps>=5){logoTaps=0;S.smartUnlocked=!S.smartUnlocked;if(!S.smartUnlocked)S.smart=false;saveS();toast(S.smartUnlocked?'Smart align unlocked. Find it in Settings.':'Smart align hidden.');}return;}
   if(id==='shoot'){openCam();return;}
   if(id==='import'){$('#pickPhoto').click();return;}
   if(id==='gear'||e.target.closest('#gear')){openSettings();return;}
@@ -784,6 +880,7 @@ $('#app').addEventListener('click',e=>{
   if(id==='noDemo'){removeDemo();return;}
   if(id==='hideInstall'){S.hideInstall=Date.now()+3*864e5;saveS();render();return;}
   if(id==='nudgeBk'){backupSave();return;}
+  if(id==='msHide'){S.msSeen[S.track]=MILES.filter(x=>x<=real().length).pop()||0;saveS();render();return;}
 });
 $('#pickPhoto').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)fromFile(f);e.target.value='';});
 $('#pickBackup').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)backupRestore(f);e.target.value='';});

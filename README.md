@@ -36,6 +36,17 @@ Morphē (Greek *μορφή*, "form, shape", the root of *metamorphosis*) is a fr
 
 > **Why install it?** On iPhone, Safari can clear a website's saved data if you don't open it for about a week. Apps added to the Home Screen are kept.
 
+## What's new in v4
+
+- Faster roll: small thumbnails are saved with each photo (older photos get them automatically).
+- Light check in the camera ("too dark", "darker than yesterday") and an "Even out the lighting" option for videos.
+- Status / Reels 9:16 videos, plus an optional "Made with Morphē" end card.
+- Smart align is now in Settings for everyone (beta), and any photo can be set as your line-up reference.
+- Daily reminder via Google Calendar or any calendar app.
+- Milestone cards at 7, 14, 30, 60, 100, 180 and 365 photos.
+- Storage info in Settings and a monthly backup reminder.
+- Lighter first load (the backup library only downloads when you back up).
+
 ## Privacy
 
 - Your photos are stored **only on your phone**, in the app's own storage. They are never uploaded, including to this repository.
